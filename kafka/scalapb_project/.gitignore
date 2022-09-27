@@ -1,0 +1,5 @@
+*.desc
+*.idea
+target/
+*.bsp
+

@@ -1,0 +1,57 @@
+syntax = "proto3";
+package process;
+
+message ProcessEvent {
+  string customer_id        = 1;
+  string sensor_id          = 2;
+  uint64 process_id         = 3;
+  uint64 parent_process_id  = 4;
+  string filename           = 5;
+  string command_line       = 6;
+  string user_id            = 7;
+  uint64 timestamp_unix_utc = 8;
+  string sha256             = 9;
+}
+
+message FooEvent {
+  string customer_id = 1;
+  string sensor_id   = 2;
+  string field1      = 3;
+  string field2      = 4;
+}
+
+message ProcessCombined {
+  string customer_id    = 1;
+  string sensor_id      = 2;
+  ProcessDetail process = 3;
+}
+
+message ProcessDetail {
+  uint64 process_id            = 1;
+  string filename              = 2;
+  string command_line          = 3;
+  string user_id               = 4;
+  uint64 timestamp_unix_utc    = 5;
+  string sha256                = 6;
+  ProcessDetail parent_process = 7;
+}
+
+message BenchmarkEvent {
+  string customer_id = 1;
+  string sensor_id   = 2;
+  string field1      = 3;
+  string field2      = 4;
+  string field3      = 5;
+  string field4      = 6;
+  string field5      = 7;
+  string field6      = 8;
+  string field7      = 9;
+  string field8      = 10;
+  string field9      = 11;
+  string field10     = 12;
+  string field11     = 13;
+  string browser     = 14;
+  uint64 id          = 15;
+}
+
+
