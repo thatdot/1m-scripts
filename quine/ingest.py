@@ -4,7 +4,7 @@ import requests
 from typing import *
 from time import sleep, time
 
-a_quine_host: str = "http://10.56.36.5:8080"
+a_quine_host: str = "http://10.56.6.3:8080"
 
 # Hosts that form the cluster
 def get_quine_hosts():
@@ -67,6 +67,134 @@ def resetCluster():
     if not resp.ok:
         print(resp.text)
 
+"""
+G1: General Ingest (writes, minimal reads)
+==========================================
+
+We will be reading protobuf-formatted `ProcessEvents` from a kafka topic, and generating a forest of
+process nodes. Because a forest is a set of trees, and each tree has one fewer edge than it has
+nodes, this approximates a 1:1 relationship between nodes and edges.
+
+ORIGINAL SETUP:
+
+The topic contains 300 million events, partitioned by `sensor_id`. Quine Enterprise's internal host-mapping
+scheme matches that of Kafka, so when the same partitioning key is used in `locIdFrom` as in Kafka,
+few to no cross-host edges will be created. We go a step further and predetermine which partition's
+data will end up on each host, so that during ingest, hosts shouldn't need to distribute much data.
+
+Among those processEvents there are represented:
+- 1 million sensor IDs
+- 5 thousand customer IDs
+- Sensor IDs are unique per-customer
+- Process trees share the same sensor ID
+
+For each processEvent, we want to use its ID to match the process it describes and that process's parent.
+We then want to create an edge between the two. To do all this in cypher looks like the following:
+"""
+
+g1g2IngestQuery = (
+    # generates an ID using determinsitic hashing for the process node
+    """WITH locIdFrom($that.sensor_id, "process", $that.customer_id, $that.sensor_id, $that.process_id) AS pId """ +
+    # retrieves the node (n) with that ID ("all nodes exist")
+    """MATCH (n) WHERE id(n) = pId """ +
+    # copies the processEvent onto the node n
+    """SET n = $that WITH n """ +
+    # stops the query here when the process is a root process
+    """WHERE $that.parent_process_id <> 0 """ +
+    # otherwise, repeats the "generate ID, retrieve node" pattern to find the parent process node
+    """MATCH (m) WHERE id(m) = locIdFrom($that.sensor_id, "process", $that.customer_id, $that.sensor_id, $that.parent_process_id) """ +
+    # creates the edge from the child to the parent
+    """CREATE (n)-[:parent]->(m)"""
+)
+
+# Register the ingest on each host in the cluster
+
+
+def startG1G2Ingest():
+    # kafka group ID to use -- must be the same across all hosts but unique across different test runs (to avoid reusing committed offsets)
+    groupId = str(int(time()))
+    for i, quine_host in get_quine_hosts():
+        resp = requests.post(f"{quine_host}/api/v1/ingest/g1g2", json={
+            "type": "KafkaIngest",
+            "topics": {
+                "processEvents": partitions(i)
+            },
+            "bootstrapServers": kafka_servers,
+            "groupId": groupId,
+            "autoOffsetReset": "earliest",
+            "parallelism": ingest_parallelism,
+            "offsetCommitting": {
+                "maxBatch": 1000,
+                "maxIntervalMillis": 1000,
+                "parallelism": 100,
+                "waitForCommitConfirmation": False,
+                "type": "ExplicitCommit"
+            },
+            "format": {
+                "type": "CypherProtobuf",
+                "query": g1g2IngestQuery,
+                "schemaUrl": protobuf_schema,
+                "typeName": "ProcessEvent"
+            }
+        })
+        if resp.ok:
+            print(f"Registered ingest g1g2 on {quine_host}")
+        else:
+            print(resp.text)
+
+# To pause all the ingests:
+
+
+def pauseG1G2():
+    for quine_host in quine_hosts:
+        resp = requests.put(f"{quine_host}/api/v1/ingest/g1g2/pause")
+        if resp.ok:
+            print(f"Paused ingest g1g2 on {quine_host}")
+        else:
+            print(resp.text)
+
+
+# To resume all the ingests:
+def resumeG1G2():
+    for quine_host in dict(get_quine_hosts()).values():
+        resp = requests.put(f"{quine_host}/api/v1/ingest/g1g2/start")
+        if resp.ok:
+            print(f"Resumed ingest g1g2 on {quine_host}")
+        else:
+            print(resp.text)
+
+# To delete (ie, permanently stop) all the ingests:
+
+
+def stopG1G2Ingest():
+    for quine_host in dict(get_quine_hosts()).values():
+        resp = requests.delete(f"{quine_host}/api/v1/ingest/g1g2")
+        if resp.ok:
+            print(f"Deleted ingest g1g2 on {quine_host}")
+        else:
+            print(resp.text)
+
+
+if __name__ == "__main__":
+    startG1G2Ingest()
+
+    # sleep for 30 seconds to let everything normalize
+    print("Waiting 30 seconds to collect performance data...")
+    sleep(30)
+
+    # With the ingest running, we can see data streaming into the system by repeatedly querying (via the web interface):
+    # CALL recentNodes(10) YIELD node MATCH (n) WHERE id(n) = node AND n.process_id IS NOT NULL RETURN n
+
+    # The insert rate is measured by the ingest streams themselves (see the "stats" section):
+    print(f"Ingest on {a_quine_host}:")
+    ingest_sample_response = requests.get(
+        f"{a_quine_host}/api/v1/ingest/g1g2")
+    print(ingest_sample_response.text)
+
+    # We can aggregate all the interest rates to find out the cluster's total rate per second
+    print(
+        f"Current cluster-wide ingest rate: {overallIngestRate('g1g2'):,.0f}")
+    
 """
 SQ1: Standing Queries / Event Multiplexing
 ==========================================
@@ -207,130 +335,3 @@ if __name__ == "__main__":
     print(
         f"Current cluster-wide ingest rate: {overallIngestRate('g1g2'):,.0f}")
 
-"""
-G1: General Ingest (writes, minimal reads)
-==========================================
-
-We will be reading protobuf-formatted `ProcessEvents` from a kafka topic, and generating a forest of
-process nodes. Because a forest is a set of trees, and each tree has one fewer edge than it has
-nodes, this approximates a 1:1 relationship between nodes and edges.
-
-ORIGINAL SETUP:
-
-The topic contains 300 million events, partitioned by `sensor_id`. Quine Enterprise's internal host-mapping
-scheme matches that of Kafka, so when the same partitioning key is used in `locIdFrom` as in Kafka,
-few to no cross-host edges will be created. We go a step further and predetermine which partition's
-data will end up on each host, so that during ingest, hosts shouldn't need to distribute much data.
-
-Among those processEvents there are represented:
-- 1 million sensor IDs
-- 5 thousand customer IDs
-- Sensor IDs are unique per-customer
-- Process trees share the same sensor ID
-
-For each processEvent, we want to use its ID to match the process it describes and that process's parent.
-We then want to create an edge between the two. To do all this in cypher looks like the following:
-"""
-
-g1g2IngestQuery = (
-    # generates an ID using determinsitic hashing for the process node
-    """WITH locIdFrom($that.sensor_id, "process", $that.customer_id, $that.sensor_id, $that.process_id) AS pId """ +
-    # retrieves the node (n) with that ID ("all nodes exist")
-    """MATCH (n) WHERE id(n) = pId """ +
-    # copies the processEvent onto the node n
-    """SET n = $that WITH n """ +
-    # stops the query here when the process is a root process
-    """WHERE $that.parent_process_id <> 0 """ +
-    # otherwise, repeats the "generate ID, retrieve node" pattern to find the parent process node
-    """MATCH (m) WHERE id(m) = locIdFrom($that.sensor_id, "process", $that.customer_id, $that.sensor_id, $that.parent_process_id) """ +
-    # creates the edge from the child to the parent
-    """CREATE (n)-[:parent]->(m)"""
-)
-
-# Register the ingest on each host in the cluster
-
-
-def startG1G2Ingest():
-    # kafka group ID to use -- must be the same across all hosts but unique across different test runs (to avoid reusing committed offsets)
-    groupId = str(int(time()))
-    for i, quine_host in get_quine_hosts():
-        resp = requests.post(f"{quine_host}/api/v1/ingest/g1g2", json={
-            "type": "KafkaIngest",
-            "topics": {
-                "processEvents": partitions(i)
-            },
-            "bootstrapServers": kafka_servers,
-            "groupId": groupId,
-            "autoOffsetReset": "earliest",
-            "parallelism": ingest_parallelism,
-            "offsetCommitting": {
-                "maxBatch": 1000,
-                "maxIntervalMillis": 1000,
-                "parallelism": 100,
-                "waitForCommitConfirmation": False,
-                "type": "ExplicitCommit"
-            },
-            "format": {
-                "type": "CypherProtobuf",
-                "query": g1g2IngestQuery,
-                "schemaUrl": protobuf_schema,
-                "typeName": "ProcessEvent"
-            }
-        })
-        if resp.ok:
-            print(f"Registered ingest g1g2 on {quine_host}")
-        else:
-            print(resp.text)
-
-# To pause all the ingests:
-
-
-def pauseG1G2():
-    for quine_host in quine_hosts:
-        resp = requests.put(f"{quine_host}/api/v1/ingest/g1g2/pause")
-        if resp.ok:
-            print(f"Paused ingest g1g2 on {quine_host}")
-        else:
-            print(resp.text)
-
-
-# To resume all the ingests:
-def resumeG1G2():
-    for quine_host in dict(get_quine_hosts()).values():
-        resp = requests.put(f"{quine_host}/api/v1/ingest/g1g2/start")
-        if resp.ok:
-            print(f"Resumed ingest g1g2 on {quine_host}")
-        else:
-            print(resp.text)
-
-# To delete (ie, permanently stop) all the ingests:
-
-
-def stopG1G2Ingest():
-    for quine_host in dict(get_quine_hosts()).values():
-        resp = requests.delete(f"{quine_host}/api/v1/ingest/g1g2")
-        if resp.ok:
-            print(f"Deleted ingest g1g2 on {quine_host}")
-        else:
-            print(resp.text)
-
-
-if __name__ == "__main__":
-    startG1G2Ingest()
-
-    # sleep for 30 seconds to let everything normalize
-    print("Waiting 30 seconds to collect performance data...")
-    sleep(30)
-
-    # With the ingest running, we can see data streaming into the system by repeatedly querying (via the web interface):
-    # CALL recentNodes(10) YIELD node MATCH (n) WHERE id(n) = node AND n.process_id IS NOT NULL RETURN n
-
-    # The insert rate is measured by the ingest streams themselves (see the "stats" section):
-    print(f"Ingest on {a_quine_host}:")
-    ingest_sample_response = requests.get(
-        f"{a_quine_host}/api/v1/ingest/g1g2")
-    print(ingest_sample_response.text)
-
-    # We can aggregate all the interest rates to find out the cluster's total rate per second
-    print(
-        f"Current cluster-wide ingest rate: {overallIngestRate('g1g2'):,.0f}")
