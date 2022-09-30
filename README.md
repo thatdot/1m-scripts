@@ -1,9 +1,6 @@
 # Quine, graph data that Scales Past 1 Million Events/Second
 
-> TODO:
-> * This repo does not have a configuration file
-> * Basic steps to set up the test enviornment
-> * We need to discuss Quine OSS vs Quine Enterprise and if the test is valid for Quine OSS
+> **Note**: This repo is provided as a technical reference for the the [Scaling Quine Streaming Graph to Process 1 Million Events/Second](https://www.thatdot.com/blog/scaling-quine-streaming-graph-to-process-1-million-events-sec) blog. If you are interested in running the test yourself, please reach out to us in [Slack](https://github.com/thatdot/quine) for configuration assistance. 
 
 Finding relationships within categorical data is graph's strong point. Doing so at scale, as Quine now makes possible, has significant implications for cyber security, fraud detection, observability, logistics, e-commerce, and any use case that graph is both well-suited for and which must process high velocity data in real time.
 
