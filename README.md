@@ -77,7 +77,7 @@ The plan is set out below, with each action labeled and the results explained. E
 
 A few notes on the test:
 
-* A script is used to generate events
+* A [script](https://github.com/thatdot/1m-scripts/blob/improve-dx/quine/ingest.py) is used to generate events
 * Host failures are manually triggered.
 * We used Grafana for the results (and screenshots).
 * We pre-loaded Kafka with enough events to sustain **one million events/second** for two hours.

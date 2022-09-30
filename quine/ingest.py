@@ -4,7 +4,7 @@ import requests
 from typing import *
 from time import sleep, time
 
-a_quine_host: str = "http://10.56.6.3:8080"
+a_quine_host: str = "http://xxx.xxx.xxx.xxx:8080"
 
 # Hosts that form the cluster
 def get_quine_hosts():
@@ -17,7 +17,9 @@ def get_quine_hosts():
 kafka_partitions = 420
 # kafka broker string
 kafka_servers = ','.join([
-     "10.128.15.218:9092", "10.128.15.219:9092", "10.128.15.220:9092"
+     "xxx.xxx.xxx.xxx:9092",
+     "xxx.xxx.xxx.xxx:9092",
+     "xxx.xxx.xxx.xxx:9092"
 ])
 if (len(kafka_servers) == 0):
     print("please specify kafka_servers in env.py")
@@ -30,16 +32,12 @@ ingest_parallelism = 96
 protobuf_schema = "https://thatdot-public.s3.us-west-2.amazonaws.com/schema.desc"
 
 # Given a host index, retrieve the partitions that host should read from
-
-
 def partitions(for_host: int) -> List[int]:
     return list(range(for_host, kafka_partitions, len(get_quine_hosts())))
 
 # aggregate ingest rates across all quine_hosts
 
 # Gets a lower bound on the ingest rate of the cluster
-
-
 def overallIngestRate(which_ingest: str) -> float:
     totalIngested = 0
     longestMillis = 0
@@ -51,8 +49,6 @@ def overallIngestRate(which_ingest: str) -> float:
     return totalIngested / (longestMillis / 1000)
 
 # Prints the full ingest stats block for the named ingest for each host of the cluster
-
-
 def printIngestStatus(which_ingest: str) -> None:
     for quine_host in dict(get_quine_hosts()).values():
         stats = requests.get(
@@ -60,8 +56,6 @@ def printIngestStatus(which_ingest: str) -> None:
         print(stats)
 
 # reset the cluster back to its 'initial state', clearing out all data and settings
-
-
 def resetCluster():
     resp = requests.post(f"{a_quine_host}/api/v1/admin/reset")
     if not resp.ok:
@@ -75,7 +69,7 @@ We will be reading protobuf-formatted `ProcessEvents` from a kafka topic, and ge
 process nodes. Because a forest is a set of trees, and each tree has one fewer edge than it has
 nodes, this approximates a 1:1 relationship between nodes and edges.
 
-ORIGINAL SETUP:
+SETUP:
 
 The topic contains 300 million events, partitioned by `sensor_id`. Quine Enterprise's internal host-mapping
 scheme matches that of Kafka, so when the same partitioning key is used in `locIdFrom` as in Kafka,
@@ -93,7 +87,7 @@ We then want to create an edge between the two. To do all this in cypher looks l
 """
 
 g1g2IngestQuery = (
-    # generates an ID using determinsitic hashing for the process node
+    # generates an ID using deterministic hashing for the process node
     """WITH locIdFrom($that.sensor_id, "process", $that.customer_id, $that.sensor_id, $that.process_id) AS pId """ +
     # retrieves the node (n) with that ID ("all nodes exist")
     """MATCH (n) WHERE id(n) = pId """ +
@@ -108,8 +102,6 @@ g1g2IngestQuery = (
 )
 
 # Register the ingest on each host in the cluster
-
-
 def startG1G2Ingest():
     # kafka group ID to use -- must be the same across all hosts but unique across different test runs (to avoid reusing committed offsets)
     groupId = str(int(time()))
@@ -143,8 +135,6 @@ def startG1G2Ingest():
             print(resp.text)
 
 # To pause all the ingests:
-
-
 def pauseG1G2():
     for quine_host in quine_hosts:
         resp = requests.put(f"{quine_host}/api/v1/ingest/g1g2/pause")
@@ -164,8 +154,6 @@ def resumeG1G2():
             print(resp.text)
 
 # To delete (ie, permanently stop) all the ingests:
-
-
 def stopG1G2Ingest():
     for quine_host in dict(get_quine_hosts()).values():
         resp = requests.delete(f"{quine_host}/api/v1/ingest/g1g2")
@@ -173,7 +161,6 @@ def stopG1G2Ingest():
             print(f"Deleted ingest g1g2 on {quine_host}")
         else:
             print(resp.text)
-
 
 if __name__ == "__main__":
     startG1G2Ingest()
@@ -200,7 +187,7 @@ SQ1: Standing Queries / Event Multiplexing
 ==========================================
 
 Using the same processEvents stream as before, we aim to extract 4-generation
-process heirarchies. That is, patterns within the graph that would match this
+process hierarchies. That is, patterns within the graph that would match this
 cypher expression:
 
 MATCH (child)-[:parent]->(parent)-[:parent]->(grandparent)-[:parent]->(greatGrandparent)
@@ -272,7 +259,6 @@ RETURN
     } as process
 ```
 """
-
 
 # To get the status of the standing query:
 def printSq1Status():
