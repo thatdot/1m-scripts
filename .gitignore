@@ -2,3 +2,7 @@ __pycache__/
 .mypy_cache
 
 metals.*
+
+# Vim
+*.swp
+*.swo
