@@ -245,6 +245,7 @@ class GeneratorState(
 object Main extends App {
   implicit val as = ActorSystem()
 
+  val genSeed = Try(System.getenv("SEED").toLong).getOrElse(0L)
   val howManyEvents =
     Try(System.getenv("NUMBER_OF_EVENTS").toLong).getOrElse(100 * 1000 * 1000L)
   val bootstrapServers = System.getenv("KAFKA")
@@ -266,7 +267,7 @@ object Main extends App {
   val partitionKey = Option(System.getenv("PARTITION_KEY")).getOrElse("sensorId")
 
   val generatorState = new GeneratorState(
-    seed = 0,
+    seed = genSeed,
     numberCustomers = numberOfCustomers,
     numberSensors = numberOfSensors,
     rootProcessRarity = rootProcessRarity,
